@@ -1,6 +1,5 @@
 package restaurante;
 
-import java.util.LinkedList;
 import java.awt.Color;
 import java.awt.Dimension;
 import java.awt.event.ActionEvent;
@@ -22,7 +21,9 @@ import javax.imageio.ImageIO;
 import javax.swing.JToggleButton;
 
 /**
- *
+ * UNIVERSIDAD POLITÉCNICA DE CHIAPAS
+ * PROGRAMACIÓN CONCURRENTE - CORTE 2
+ * 6 de noviembre del 2017
  * @author Equipo 4
  */
 public class Ejecutable {
@@ -38,25 +39,41 @@ public class Ejecutable {
 
 class Ventana extends JPanel {
     enum EstadoOrden {
-        NOTA, LISTO, SIENDO_COMIDO
+        NOTA, //Acaba de ser pedida, es un papel que tiene escrita la orden.
+        LISTO, //La orden ya se cocinó, está bajo una tapa.
+        SIENDO_COMIDO //La orden está en la mesa del cliente y ha sido destapada.
     }
     
     //La duración de cada fotograma, en milisegundos.
     static final byte FOTOGRAMA = 10;
     
+    //Dibujo de un restaurante.
     BufferedImage img_fondo;
+    //La silueta de una mesa.
     BufferedImage img_mesa;
     
     //Generador de números aleatorios.
     Random random;
     
+    //Botón que nos permite controlar si se muestran los estados del hilo.
     JToggleButton mostrarEstados;
     
-    Semaphore cola, semLugares, semMostrador;
-    ArrayList<Cliente> clientesEnPantalla, clientesEnCola;
-    ArrayList<Cliente> ordenesEnMostrador;
+    //Semáforo que controla la fila de entrada.
+    Semaphore cola;
+    //Almacena a los cliente que estén haciendo cola en un momento determinado.
+    ArrayList<Cliente> clientesEnCola;
+    
+    //Almacena a los clientes que estén dentro del restaurante.
+    ArrayList<Cliente> clientesEnPantalla;
+    
+    //Controlan los lugares o sillas que los clientes ocupan.
+    Semaphore semLugares;
     Lugar[] lugares;
+    
+    //Arreglo que contiene las órdenes que están en el mostrador.
     Orden[] mostrador;
+    
+    //Los trabajadores.
     Mesero mesero;
     Chef chef;
     
@@ -88,9 +105,8 @@ class Ventana extends JPanel {
         mesero = new Mesero();
         clientesEnCola = new ArrayList<>();
         clientesEnPantalla = new ArrayList<>();
-        random = new Random();
         mostrador = new Orden[lugares.length];
-        semMostrador = new Semaphore(mostrador.length);
+        random = new Random();
         
         lugares[0] = new Lugar((short)175, (short)220, false);
         lugares[1] = new Lugar((short)175, (short)365, false);
@@ -106,6 +122,7 @@ class Ventana extends JPanel {
         
         setPreferredSize(new Dimension(640,480));  
         
+        //Creamos al chef y a su hilo.
         chef = new Chef();
         Thread hChef = new Thread(chef);
         hChef.setDaemon(true);
@@ -140,6 +157,9 @@ class Ventana extends JPanel {
         generadorDeClientes.start();
     }
     
+    /**
+     * Agrega un cliente al escenario.
+     */
     private void crearCliente(){
         try {
             cola.acquire();
@@ -167,19 +187,27 @@ class Ventana extends JPanel {
         for(byte i = 0; i < 4; i++)
             lienzo.drawImage(img_mesa, lugares[i].getX(), lugares[i].getY(), null);
         
+        //Mostramos a los clientes.
         synchronized(clientesEnPantalla){
             for(Cliente aux : clientesEnPantalla)
                 aux.renderizar(lienzo);
         }
         
+        //Mostramos las órdenes del mostrador.
         for(byte i = 0; i < mostrador.length; i++)
             if(mostrador[i] != null)
                 lienzo.drawImage(mostrador[i].getGrafico(), 252 + (i * 35), 112, null);
         
+        //Mostramos a los trabajadores.
         chef.renderizar(lienzo);
         mesero.renderizar(lienzo);
     }
     
+    /**
+     * Pinta una imagen de un color, reemplazando sus píxeles negros (con el color RGB: 0, 0, 0).
+     * @param img Imagen a pintar.
+     * @param c Color que reemplazará al negro.
+     */
     public void pintarImagen(BufferedImage img, Color c){
         //Visitamos todos los pixeles de la imagen y cambiamos el color donde sea necesario.
         int colorNegro, colorNuevo, pixelActual;
@@ -194,9 +222,27 @@ class Ventana extends JPanel {
             }
     }
     
+    /**
+     * Invierte una imagen horizontalmente.
+     * @param imgAVoltear Imagen que se desea voltear.
+     * @return Una copia de la imagen invertida.
+     */
+    public BufferedImage voltearHorizontoal(BufferedImage imgAVoltear){
+        AffineTransform tx = AffineTransform.getScaleInstance(-1, 1);
+        tx.translate(-imgAVoltear.getWidth(null), 0);
+        AffineTransformOp op = new AffineTransformOp(tx, AffineTransformOp.TYPE_NEAREST_NEIGHBOR);
+        return op.filter(imgAVoltear, null);
+    }
+    
+    /**
+     * Clase que representa una posición en la pantalla donde se encuentra una silla.
+     */
     class Lugar{
+        //Posición
         private final short x, y;
+        //Si es falso, la silla está a la izquierda de la mesa, si no, a la derecha.
         private final boolean direccion;
+        //Indica si el lugar está siendo ocupado por un cliente.
         AtomicBoolean ocupado;
 
         public Lugar(short x, short y, boolean direccion) {
@@ -219,9 +265,17 @@ class Ventana extends JPanel {
         }
     }
     
+    /**
+     * Clase abstracta que representa un objeto móvil que puede ser mostrado en pantalla.
+     */
     abstract class Renderizable{
         short posX, posY;
         
+        /**
+         * Cambia la posición de este objeto.
+         * @param x Nueva posición en X.
+         * @param y Nueva posición en Y.
+         */
         public void moverA(Short x, Short y){
             if(x == null)
                 x = posX;
@@ -245,6 +299,10 @@ class Ventana extends JPanel {
             }
         }
         
+        /**
+         * Imprime este objeto en pantalla.
+         * @param lienzo Canvas de swing de un JPanel.
+         */
         public abstract void renderizar(Graphics2D lienzo);
     }
     
@@ -342,14 +400,10 @@ class Ventana extends JPanel {
                 }
                 if(silla.getDireccion() == true){
                     direccion = true;
-                    AffineTransform tx = AffineTransform.getScaleInstance(-1, 1);
-                    tx.translate(-grafico.getWidth(null), 0);
-                    AffineTransformOp op = new AffineTransformOp(tx, AffineTransformOp.TYPE_NEAREST_NEIGHBOR);
-                    grafico = op.filter(grafico, null);
+                    grafico = voltearHorizontoal(grafico);
                 }
                 
                 estado = "Parado - Esperando mesero";
-                semMostrador.acquire();
                 mesero.semaforo.acquire();
                 estado = "Ejecutable - Llamando mesero";
                 if(direccion == true)
@@ -385,7 +439,6 @@ class Ventana extends JPanel {
                                 else
                                     mesero.moverA(silla.getX(), silla.getY());
                                 mesero.liberar();
-                                semMostrador.release();
                                 mesero.semaforo.release();
                                 yaSeRecibioLaOrden = true;
                                 break;
@@ -402,12 +455,8 @@ class Ventana extends JPanel {
                     pintarImagen(grafico, color);
                     posY -= 5;
                     
-                    if(silla.getDireccion() == true){
-                        AffineTransform tx = AffineTransform.getScaleInstance(-1, 1);
-                        tx.translate(-grafico.getWidth(null), 0);
-                        AffineTransformOp op = new AffineTransformOp(tx, AffineTransformOp.TYPE_NEAREST_NEIGHBOR);
-                        grafico = op.filter(grafico, null);
-                    }
+                    if(silla.getDireccion() == true)
+                        grafico = voltearHorizontoal(grafico);
                 } catch (Exception e) {
                     e.printStackTrace();
                     System.exit(-1);
@@ -592,7 +641,7 @@ class Ventana extends JPanel {
                                 break;
                             }
                     }
-                    estado = "Parado - Esperando ordenes";
+                    estado = "Parado - Esperando órdenes";
                     Thread.sleep(1000);
                 }
             } catch (Exception e) {
